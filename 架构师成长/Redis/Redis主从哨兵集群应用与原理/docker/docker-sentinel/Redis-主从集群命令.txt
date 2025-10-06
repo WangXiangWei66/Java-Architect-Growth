@@ -1,0 +1,105 @@
+1. 创建Docker网络
+docker network create redis-net
+
+2. 创建 Docker 数据卷
+docker volume create redis_master_config
+docker volume create redis_slave1_config
+docker volume create redis_slave2_config
+docker volume create sentinel1_config
+docker volume create sentinel2_config
+docker volume create sentinel3_config
+
+---如果是删除，上面的create换成rm就是删除
+
+docker volume rm sentinel1_config
+docker volume rm sentinel2_config
+docker volume rm sentinel3_config
+
+3、将配置文件复制到对应的数据卷
+# 主从节点配置（建议先启动主节点后再修改从节点的主从关系配置）
+docker run --rm -v D:\docker\docker-sentinel\redis-master.conf:/config/redis-master.conf -v redis_master_config:/usr/local/etc/redis busybox cp /config/redis-master.conf /usr/local/etc/redis/redis.conf
+docker run --rm -v D:\docker\docker-sentinel\redis-slave.conf:/config/redis-slave.conf -v redis_slave1_config:/usr/local/etc/redis busybox cp /config/redis-slave.conf /usr/local/etc/redis/redis.conf
+docker run --rm -v D:\docker\docker-sentinel\redis-slave.conf:/config/redis-slave.conf -v redis_slave2_config:/usr/local/etc/redis busybox cp /config/redis-slave.conf /usr/local/etc/redis/redis.conf
+
+
+
+
+#查看配置文件：
+docker run --rm -v redis_master_config:/usr/local/etc/redis busybox cat /usr/local/etc/redis/redis.conf
+docker run --rm -v redis_slave1_config:/usr/local/etc/redis busybox cat /usr/local/etc/redis/redis.conf
+docker run --rm -v redis_slave2_config:/usr/local/etc/redis busybox cat /usr/local/etc/redis/redis.conf
+#删除配置文件：
+docker run --rm -v redis_sentinel1_config:/usr/local/etc/redis busybox rm /usr/local/etc/redis/redis.conf
+
+如何删除
+
+
+#启动主节点
+docker run -d --name redis-master --net redis-net -p 6379:6379 -v redis_master_config:/usr/local/etc/redis redis:7.0 redis-server /usr/local/etc/redis/redis.conf
+
+## 这里需要查看主节点的IP，修改sentinel.conf文件中IP  sentinel monitor mymaster 172.18.0.2 6379 2
+ docker network inspect redis-net
+
+docker run -d --name redis-slave1 --net redis-net -p 6380:6379 -v redis_slave1_config:/usr/local/etc/redis redis:7.0 redis-server /usr/local/etc/redis/redis.conf
+docker run -d --name redis-slave2 --net redis-net -p 6381:6379 -v redis_slave2_config:/usr/local/etc/redis redis:7.0 redis-server /usr/local/etc/redis/redis.conf
+
+
+
+
+# 哨兵节点配置
+docker run --rm -v D:\docker\docker-sentinel\sentinel.conf:/config/sentinel.conf -v sentinel1_config:/usr/local/etc/redis busybox cp /config/sentinel.conf /usr/local/etc/redis/redis.conf
+docker run --rm -v D:\docker\docker-sentinel\sentinel.conf:/config/sentinel.conf -v sentinel2_config:/usr/local/etc/redis busybox cp /config/sentinel.conf /usr/local/etc/redis/redis.conf
+docker run --rm -v D:\docker\docker-sentinel\sentinel.conf:/config/sentinel.conf -v sentinel3_config:/usr/local/etc/redis busybox cp /config/sentinel.conf /usr/local/etc/redis/redis.conf
+
+#查看配置文件：
+docker run --rm -v sentinel1_config:/usr/local/etc/redis busybox cat /usr/local/etc/redis/redis.conf
+
+#启动哨兵节
+
+docker run -d --name redis-sentinel1 --net redis-net -p 26379:26379 -v sentinel1_config:/usr/local/etc/redis redis:7.0 redis-sentinel /usr/local/etc/redis/redis.conf
+docker run -d --name redis-sentinel2 --net redis-net -p 26380:26379 -v sentinel2_config:/usr/local/etc/redis redis:7.0 redis-sentinel /usr/local/etc/redis/redis.conf
+docker run -d --name redis-sentinel3 --net redis-net -p 26381:26379 -v sentinel3_config:/usr/local/etc/redis redis:7.0 redis-sentinel /usr/local/etc/redis/redis.conf
+
+
+
+
+## 进入主节点：
+docker exec -it redis-master redis-cli -p 6379
+
+
+## 检查 Redis 实例的角色
+INFO replication
+--使用monitor命令看3个命令
+
+## 进入从节点：
+docker exec -it redis-slave1 redis-cli -p 6379
+
+--使用monitor命令看3个命令
+
+## 进入哨兵节点（哨兵不支持monitor和其他的）：
+docker exec -it redis-sentinel1 redis-cli -p 26379
+
+--SENTINEL masters 命令可以查看哨兵当前监控的所有主节点信息。
+--SENTINEL slaves 命令可以查看特定主节点的从节点信息。
+--SENTINEL get-master-addr-by-name 命令可以获取当前主节点的地址。
+
+
+
+
+
+## 检查主从复制:
+
+docker exec -it redis-master redis-cli  info replication
+
+## 检查Sentinel状态:
+
+docker exec -it redis-sentinel1 redis-cli -p 26379 sentinel master mymaster
+
+
+
+##故障转移测试
+
+docker logs -f redis-sentinel1
+
+docker pause redis-master
+

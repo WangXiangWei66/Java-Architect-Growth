@@ -1,0 +1,124 @@
+1. 创建Docker网络
+docker network create redis-cluster-net
+
+2. 创建 Docker 数据卷
+docker volume create redis_node1_data
+docker volume create redis_node2_data
+docker volume create redis_node3_data
+docker volume create redis_node4_data
+docker volume create redis_node5_data
+docker volume create redis_node6_data
+
+---如果是删除，上面的create换成rm就是删除
+
+3、配置文件复制到每个节点的数据卷中
+docker run --rm -v D:\docker\docker-cluster\redis-cluster.conf:/config/redis-cluster.conf -v redis_node1_data:/data busybox cp /config/redis-cluster.conf /data/redis.conf
+docker run --rm -v D:\docker\docker-cluster\redis-cluster.conf:/config/redis-cluster.conf -v redis_node2_data:/data busybox cp /config/redis-cluster.conf /data/redis.conf
+docker run --rm -v D:\docker\docker-cluster\redis-cluster.conf:/config/redis-cluster.conf -v redis_node3_data:/data busybox cp /config/redis-cluster.conf /data/redis.conf
+docker run --rm -v D:\docker\docker-cluster\redis-cluster.conf:/config/redis-cluster.conf -v redis_node4_data:/data busybox cp /config/redis-cluster.conf /data/redis.conf
+docker run --rm -v D:\docker\docker-cluster\redis-cluster.conf:/config/redis-cluster.conf -v redis_node5_data:/data busybox cp /config/redis-cluster.conf /data/redis.conf
+docker run --rm -v D:\docker\docker-cluster\redis-cluster.conf:/config/redis-cluster.conf -v redis_node6_data:/data busybox cp /config/redis-cluster.conf /data/redis.conf
+
+
+
+4、启动 Redis 集群节点
+docker run -d --name redis-node1 --net redis-cluster-net -p 6379:6379 -v redis_node1_data:/data redis:7.0 redis-server /data/redis.conf
+docker run -d --name redis-node2 --net redis-cluster-net -p 6380:6379 -v redis_node2_data:/data redis:7.0 redis-server /data/redis.conf
+docker run -d --name redis-node3 --net redis-cluster-net -p 6381:6379 -v redis_node3_data:/data redis:7.0 redis-server /data/redis.conf
+docker run -d --name redis-node4 --net redis-cluster-net -p 6382:6379 -v redis_node4_data:/data redis:7.0 redis-server /data/redis.conf
+docker run -d --name redis-node5 --net redis-cluster-net -p 6383:6379 -v redis_node5_data:/data redis:7.0 redis-server /data/redis.conf
+docker run -d --name redis-node6 --net redis-cluster-net -p 6384:6379 -v redis_node6_data:/data redis:7.0 redis-server /data/redis.conf
+
+## 这里需要查看主节点的IP
+ docker network inspect redis-cluster-net
+
+5、创建 Redis 集群
+docker exec -it redis-node1 redis-cli --cluster create 172.20.0.2:6379 172.20.0.3:6379 172.20.0.4:6379 172.20.0.5:6379 172.20.0.6:6379 172.20.0.7:6379 --cluster-replicas 1
+
+
+--cluster-replicas 1 表示每个主节点有一个从节点。  然后他们随机去分配主从关系。
+
+6、查看 Redis 集群信息
+## 进入主节点：
+docker exec -it redis-node1 redis-cli -p 6379
+
+## 查看主从关系
+docker exec -it redis-node1 redis-cli CLUSTER NODES
+## 查看分槽（Slot）的数据分布
+docker exec -it redis-node1 redis-cli CLUSTER SLOTS
+
+
+##查看某个槽的分配信息
+docker exec -it redis-node1 redis-cli CLUSTER KEYSLOT <key>
+
+
+7、动态扩容
+
+docker volume create redis_node7_data
+docker run --rm -v D:\docker\docker-cluster\redis-cluster.conf:/config/redis-cluster.conf -v redis_node7_data:/data busybox cp /config/redis-cluster.conf /data/redis.conf
+
+添加新节点
+docker run -d --name redis-node7 --net redis-cluster-net -p 6385:6379 -v redis_node7_data:/data redis:7.0 redis-server /data/redis.conf
+
+将新节点加入集群（172.20.0.8:6379 是新节点的 IP 和端口。172.20.0.2:6379 是集群中任意一个现有节点的 IP 和端口。）
+docker exec -it redis-node1 redis-cli --cluster add-node 172.20.0.8:6379 172.20.0.2:6379
+
+动态扩容处理过程：
+
+docker exec -it redis-node1 redis-cli --cluster reshard 172.20.0.2:6379  
+
+172.20.0.2:6379   这个地址随便（只要是之前的集群节点）
+1）输入要移动的槽数量  How many slots do you want to move (from 1 to 16384)? 1000
+ 2）输入目标节点的 ID（这里只能1个）  What is the receiving node ID? <redis-node1-id>
+3）输入源节点的 ID（可以是多个，all代表所有其他，done结束）
+Please enter all the source node IDs.
+Type 'all' to use all the nodes as source nodes for the hash slots.
+Type 'done' once you entered all the source nodes IDs.
+Source node #1: <redis-node7-id>
+Source node #2: done
+4)输入 yes 确认操作
+
+验证重新分片结果
+docker exec -it redis-node1 redis-cli CLUSTER SLOTS
+docker exec -it redis-node1 redis-cli CLUSTER NODES
+
+
+
+
+8. 缩容（标准手动缩容）
+docker exec -it redis-node1 redis-cli --cluster reshard 172.20.0.2:6379
+1）输入要移动的槽数量  How many slots do you want to move (from 1 to 16384)? 1000
+2）输入目标节点的 ID（这里只能1个）  What is the receiving node ID? <redis-node1-id>
+3）输入源节点的 ID（可以是多个，all代表所有其他，done结束）
+Please enter all the source node IDs.
+Type 'all' to use all the nodes as source nodes for the hash slots.
+Type 'done' once you entered all the source nodes IDs.
+Source node #1: <redis-node7-id>
+Source node #2: done
+4)输入 yes 确认操作
+
+移除节点
+docker exec -it redis-node1 redis-cli --cluster del-node 172.20.0.2:6379 c7f5dee4314d078b5440f2476874e68dd5198406
+停止并删除节点容器
+docker stop redis-node7
+docker rm redis-node7
+
+
+docker exec -it redis-node1 redis-cli CLUSTER NODES
+
+
+
+9、缩容（节点宕机）
+模拟主节点关闭
+docker stop redis-node1
+登录到集群中的任意一个节点（如 redis-node2），执行 CLUSTER NODES 命令查看集群状态：
+docker exec -it redis-node2 redis-cli CLUSTER NODES
+
+docker exec -it redis-node2 redis-cli CLUSTER INFO
+
+查看其他节点的日志，确认故障转移过程：
+
+docker logs -f redis-node2
+
+
+再次启动的话，就可以看到原来的都变成了从节点。

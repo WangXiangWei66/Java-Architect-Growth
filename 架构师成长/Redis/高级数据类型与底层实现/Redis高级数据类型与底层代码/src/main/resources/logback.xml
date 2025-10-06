@@ -1,0 +1,2 @@
+<!--将RBloomFilter相关的日志级别设置为ERROR-->
+<logger name="org.redisson.client.protocol.decoder.RBloomFilterDecoder" level="ERROR" />

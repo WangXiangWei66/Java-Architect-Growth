@@ -1,0 +1,4 @@
+spring:
+  ai:
+    deepseek:
+      api-key: sk-e0329666742349f9be3fd427c5ad6b8b

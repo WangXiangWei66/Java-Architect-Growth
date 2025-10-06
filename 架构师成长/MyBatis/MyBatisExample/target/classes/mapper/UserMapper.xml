@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.bobo.mybatis.mapper.UserMapper">
+
+    <cache />
+    <!--<cache type="org.mybatis.caches.redis.RedisCache"
+           eviction="FIFO"
+           flushInterval="60000"
+           size="512"
+           readOnly="true"/>-->
+  <resultMap id="BaseResultMap" type="user" >
+    <id property="id" column="id" jdbcType="INTEGER"/>
+    <result property="userName" column="user_name" jdbcType="VARCHAR"  />
+    <result property="realName" column="real_name" jdbcType="VARCHAR" />
+    <result property="password" column="password" jdbcType="VARCHAR"/>
+    <result property="age" column="age" jdbcType="INTEGER"/>
+  </resultMap>
+
+    <sql id="baseSQL">
+        id,user_name,real_name,password,age,d_id
+    </sql>
+    <!-- 定义的一个SQL标签 解析后 对应保存的对象是 MappedStatement -->
+  <select id="selectUserById" resultType="user" statementType="PREPARED"  >
+        select
+         id,
+         user_name userName,
+         real_name realName,
+         password,
+         age
+         from t_user where id = #{id}
+
+    </select>
+
+  <!-- $只能用在自定义类型和map上 -->
+  <select id="selectUserByBean"  parameterType="user" resultMap="BaseResultMap" useCache="false" >
+        select * from t_user where user_name = '${userName}'
+    </select>
+
+  <select id="selectUserList" resultMap="BaseResultMap" >
+        select * from t_user
+    </select>
+
+    <select id="queryUserList" resultMap="BaseResultMap" >
+        select * from t_user
+    </select>
+
+    <insert id="insertUser" parameterType="user">
+        insert into t_user(user_name,real_name)values(#{userName},#{realName})
+    </insert>
+
+
+
+</mapper>
